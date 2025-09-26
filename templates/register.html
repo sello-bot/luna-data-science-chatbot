@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block title %}Register - Data Science Assistant{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-header">
+            <i class="fas fa-robot auth-icon"></i>
+            <h2>Get Started</h2>
+            <p>Create your Data Science Assistant account</p>
+        </div>
+        
+        <form id="registerForm" class="auth-form">
+            <div class="form-group">
+                <div class="input-group">
+                    <i class="fas fa-envelope input-icon"></i>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        name="email" 
+                        placeholder="Email address" 
+                        required 
+                        autocomplete="email"
+                    >
+                </div>
+                <small class="form-help">We'll never share your email with anyone.</small>
+            </div>
+            
+            <div class="form-group">
+                <div class="input-group">
+                    <i class="fas fa-lock input-icon"></i>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        name="password" 
+                        placeholder="Password" 
+                        required 
+                        autocomplete="new-password"
+                        minlength="8"
+                    >
+                </div>
+                <small class="form-help">Minimum 8 characters</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="plan" class="form-label">Choose your plan:</label>
+                <div class="plan-selection">
+                    <label class="plan-option">
+                        <input type="radio" name="plan" value="free" checked>
+                        <div class="plan-card">
+                            <div class="plan-header">
+                                <i class="fas fa-gift"></i>
+                                <h3>Free</h3>
+                            </div>
+                            <div class="plan-details">
+                                <p class="plan-price">$0<span>/month</span></p>
+                                <ul class="plan-features">
+                                    <li><i class="fas fa-check"></i> 100 AI requests/month</li>
+                                    <li><i class="fas fa-check"></i> Basic data analysis</li>
+                                    <li><i class="fas fa-check"></i> Standard visualizations</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </label>
+                    
+                    <label class="plan-option">
+                        <input type="radio" name="plan" value="basic">
+                        <div class="plan-card plan-popular">
+                            <div class="plan-badge">Most Popular</div>
+                            <div class="plan-header">
+                                <i class="fas fa-star"></i>
+                                <h3>Basic</h3>
+                            </div>
+                            <div class="plan-details">
+                                <p class="plan-price">$19<span>/month</span></p>
+                                <ul class="plan-features">
+                                    <li><i class="fas fa-check"></i> 1,000 AI requests/month</li>
+                                    <li><i class="fas fa-check"></i> Advanced ML models</li>
+                                    <li><i class="fas fa-check"></i> Interactive charts</li>
+                                    <li><i class="fas fa-check"></i> Data export</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </label>
+                    
+                    <label class="plan-option">
+                        <input type="radio" name="plan" value="premium">
+                        <div class="plan-card">
+                            <div class="plan-header">
+                                <i class="fas fa-crown"></i>
+                                <h3>Premium</h3>
+                            </div>
+                            <div class="plan-details">
+                                <p class="plan-price">$49<span>/month</span></p>
+                                <ul class="plan-features">
+                                    <li><i class="fas fa-check"></i> 10,000 AI requests/month</li>
+                                    <li><i class="fas fa-check"></i> Custom models</li>
+                                    <li><i class="fas fa-check"></i> API access</li>
+                                    <li><i class="fas fa-check"></i> Priority support</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="checkbox-container">
+                    <input type="checkbox" id="agreeTerms" required>
+                    <span class="checkmark"></span>
+                    I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>
+                </label>
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-full">
+                <span class="btn-text">Create Account</span>
+                <i class="fas fa-spinner fa-spin btn-spinner" style="display: none;"></i>
+            </button>
+        </form>
+        
+        <div class="auth-footer">
+            <p>Already have an account? <a href="/login" class="auth-link">Sign in here</a></p>
+        </div>
+    </div>
+</div>
+
+<div id="successModal" class="modal" style="display: none;">
+    <div class="modal-content success-modal">
+        <div class="modal-header">
+            <i class="fas fa-check-circle success-icon"></i>
+            <h3>Welcome to Data Science Assistant!</h3>
+        </div>
+        <div class="modal-body">
+            <p>Your account has been created successfully.</p>
+            <div class="api-key-section">
+                <label>Your API Key:</label>
+                <div class="api-key-display">
+                    <code id="apiKeyDisplay"></code>
+                    <button onclick="copyApiKey()" class="copy-btn">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                <small class="api-key-note">Save this API key securely. You'll need it for API access.</small>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="proceedToApp()" class="btn btn-primary">Get Started</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let generatedApiKey = '';
+
+document.getElementById('registerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const btn = document.querySelector('.btn-primary');
+    const btnText = document.querySelector('.btn-text');
+    const btnSpinner = document.querySelector('.btn-spinner');
+    
+    // Show loading state
+    btnText.style.display = 'none';
+    btnSpinner.style.display = 'inline-block';
+    btn.disabled = true;
+    
+    const formData = {
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+        plan: document.querySelector('input[name="plan"]:checked').value
+    };
+    
+    try {
+        const response = await fetch('/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            generatedApiKey = data.api_key;
+            document.getElementById('apiKeyDisplay').textContent = data.api_key;
+            document.getElementById('successModal').style.display = 'flex';
+        } else {
+            alert(data.error || 'Registration failed');
+        }
+    } catch (error) {
+        alert('Network error. Please try again.');
+    } finally {
+        // Reset button state
+        btnText.style.display = 'inline-block';
+        btnSpinner.style.display = 'none';
+        btn.disabled = false;
+    }
+});
+
+function copyApiKey() {
+    navigator.clipboard.writeText(generatedApiKey).then(() => {
+        const copyBtn = document.querySelector('.copy-btn');
+        const originalHTML = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="fas fa-check"></i>';
+        setTimeout(() => {
+            copyBtn.innerHTML = originalHTML;
+        }, 2000);
+    });
+}
+
+function proceedToApp() {
+    localStorage.setItem('apiKey', generatedApiKey);
+    window.location.href = '/login';
+}
+</script>
+{% endblock %}
