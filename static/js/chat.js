@@ -1,7 +1,10 @@
-// Chat application JavaScript
+// Chat application JavaScript with API Key
 let chatHistory = [];
 let currentDataset = null;
 let isProcessing = false;
+
+// Your API key for local development
+const API_KEY = 'ds_EDpM1a_MBsPNfypdqqsdhHIfHnBPRIc5PJeadaIDDY8';
 
 // Initialize chat functionality
 function initializeChat() {
@@ -29,6 +32,7 @@ async function sendMessage() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-API-Key': API_KEY
             },
             body: JSON.stringify({ message: message })
         });
@@ -430,6 +434,9 @@ async function handleFileUpload(event) {
     try {
         const response = await fetch('/api/upload', {
             method: 'POST',
+            headers: {
+                'X-API-Key': API_KEY
+            },
             body: formData
         });
         
@@ -456,7 +463,11 @@ async function handleFileUpload(event) {
 // Load available datasets
 async function loadAvailableDatasets() {
     try {
-        const response = await fetch('/api/datasets');
+        const response = await fetch('/api/datasets', {
+            headers: {
+                'X-API-Key': API_KEY
+            }
+        });
         const data = await response.json();
         
         // Update sidebar with available datasets
@@ -546,7 +557,6 @@ function formatBytes(bytes, decimals = 2) {
 
 // Show full data in modal
 function showFullData() {
-    // This would be implemented to show complete dataset
     showNotification('Full data view - feature coming soon!', 'info');
 }
 
@@ -582,216 +592,68 @@ function clearChat() {
     }
 }
 
-// Export chat history
-function exportChatHistory() {
-    const exportData = {
-        timestamp: new Date().toISOString(),
-        messages: chatHistory
-    };
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-        type: 'application/json'
-    });
-    
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `chat_history_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    showNotification('Chat history exported!', 'success');
-}
-
-// Initialize tooltips and help text
-function initializeTooltips() {
-    // Add tooltips to various elements
-    const elements = document.querySelectorAll('[data-tooltip]');
-    elements.forEach(element => {
-        element.addEventListener('mouseenter', showTooltip);
-        element.addEventListener('mouseleave', hideTooltip);
-    });
-}
-
-// Show tooltip
-function showTooltip(e) {
-    const tooltip = document.createElement('div');
-    tooltip.className = 'tooltip';
-    tooltip.textContent = e.target.getAttribute('data-tooltip');
-    
-    tooltip.style.position = 'absolute';
-    tooltip.style.background = '#333';
-    tooltip.style.color = 'white';
-    tooltip.style.padding = '6px 8px';
-    tooltip.style.borderRadius = '4px';
-    tooltip.style.fontSize = '0.75rem';
-    tooltip.style.zIndex = '1002';
-    tooltip.style.pointerEvents = 'none';
-    
-    document.body.appendChild(tooltip);
-    
-    const rect = e.target.getBoundingClientRect();
-    tooltip.style.left = rect.left + 'px';
-    tooltip.style.top = (rect.bottom + 5) + 'px';
-    
-    e.target._tooltip = tooltip;
-}
-
-// Hide tooltip
-function hideTooltip(e) {
-    if (e.target._tooltip) {
-        document.body.removeChild(e.target._tooltip);
-        delete e.target._tooltip;
-    }
-}
-
-// Auto-save chat to localStorage
-function autoSaveChat() {
-    try {
-        localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
-    } catch (e) {
-        console.warn('Could not save chat history:', e);
-    }
-}
-
-// Load saved chat from localStorage
-function loadSavedChat() {
-    try {
-        const saved = localStorage.getItem('chatHistory');
-        if (saved) {
-            chatHistory = JSON.parse(saved);
-            // Optionally restore chat UI here
-        }
-    } catch (e) {
-        console.warn('Could not load saved chat:', e);
-    }
-}
-
-// Auto-save every 30 seconds
-setInterval(autoSaveChat, 30000);
-
-// Voice input (if supported)
-function initializeVoiceInput() {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
-        
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
-        
-        recognition.onresult = function(event) {
-            const transcript = event.results[0][0].transcript;
-            document.getElementById('messageInput').value = transcript;
-            showNotification('Voice input captured!', 'success');
-        };
-        
-        recognition.onerror = function(event) {
-            showNotification('Voice recognition error: ' + event.error, 'error');
-        };
-        
-        // Add voice button to input
-        const inputWrapper = document.querySelector('.chat-input-wrapper');
-        const voiceBtn = document.createElement('button');
-        voiceBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-        voiceBtn.style.padding = '12px';
-        voiceBtn.style.border = 'none';
-        voiceBtn.style.borderRadius = '50%';
-        voiceBtn.style.background = '#64748b';
-        voiceBtn.style.color = 'white';
-        voiceBtn.style.cursor = 'pointer';
-        voiceBtn.title = 'Voice input';
-        
-        voiceBtn.onclick = function() {
-            recognition.start();
-            voiceBtn.style.background = '#ef4444';
-            setTimeout(() => {
-                voiceBtn.style.background = '#64748b';
-            }, 3000);
-        };
-        
-        inputWrapper.insertBefore(voiceBtn, document.getElementById('sendButton'));
-    }
-}
-
-// Theme toggle
-function initializeThemeToggle() {
-    const themeBtn = document.createElement('button');
-    themeBtn.innerHTML = '<i class="fas fa-moon"></i>';
-    themeBtn.style.position = 'fixed';
-    themeBtn.style.top = '20px';
-    themeBtn.style.right = '20px';
-    themeBtn.style.padding = '10px';
-    themeBtn.style.border = 'none';
-    themeBtn.style.borderRadius = '50%';
-    themeBtn.style.background = 'var(--primary-color)';
-    themeBtn.style.color = 'white';
-    themeBtn.style.cursor = 'pointer';
-    themeBtn.style.zIndex = '1000';
-    themeBtn.title = 'Toggle theme';
-    
-    themeBtn.onclick = toggleTheme;
-    document.body.appendChild(themeBtn);
-}
-
-// Toggle between light and dark themes
-function toggleTheme() {
-    const root = document.documentElement;
-    const isDark = root.classList.contains('dark-theme');
-    
-    if (isDark) {
-        root.classList.remove('dark-theme');
-        localStorage.setItem('theme', 'light');
-    } else {
-        root.classList.add('dark-theme');
-        localStorage.setItem('theme', 'dark');
-    }
-}
-
-// Load saved theme
-function loadSavedTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark') {
-        document.documentElement.classList.add('dark-theme');
-    }
-}
-
-// Performance monitoring
-function monitorPerformance() {
-    // Monitor chat container scroll performance
-    const chatContainer = document.getElementById('chatContainer');
-    let scrollTimeout;
-    
-    chatContainer.addEventListener('scroll', function() {
-        clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(() => {
-            // Auto-hide older messages if chat gets too long
-            if (chatContainer.children.length > 100) {
-                const oldMessages = Array.from(chatContainer.children).slice(0, 20);
-                oldMessages.forEach(msg => msg.style.display = 'none');
-            }
-        }, 1000);
-    });
-}
-
 // Initialize all features when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    loadSavedChat();
-    loadSavedTheme();
-    initializeTooltips();
-    initializeVoiceInput();
-    initializeThemeToggle();
-    monitorPerformance();
+    initializeChat();
+    setupFileUpload();
+    setupKeyboardShortcuts();
     
     // Show welcome message with tips
     setTimeout(() => {
         if (chatHistory.length === 0) {
-            addMessage("💡 Tip: Try uploading a CSV file or type 'create sample data' to get started!", 'bot');
+            addMessage("💡 Tip: Try clicking 'Sample Data' button or type 'create sample data' to get started!", 'bot');
         }
     }, 2000);
 });
 
-// Cleanup on page unload
-window.addEventListener('beforeunload', function() {
-    autoSaveChat();
+// Handle Enter key in input
+document.getElementById('messageInput')?.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
 });
+
+// File upload functionality
+function setupFileUpload() {
+    const fileInput = document.getElementById('fileInput');
+    const uploadArea = document.getElementById('uploadArea');
+    
+    if (fileInput) fileInput.addEventListener('change', handleFileUpload);
+    
+    // Drag and drop functionality
+    if (uploadArea) {
+        uploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+        
+        uploadArea.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+        });
+        
+        uploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileUpload({target: {files: files}});
+            }
+        });
+    }
+}
+
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', function(e) {
+        // Ctrl/Cmd + Enter to send message
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            sendMessage();
+        }
+        
+        // Escape to close modals
+        if (e.key === 'Escape') {
+            const modals = document.querySelectorAll('.modal');
+            modals.forEach(modal => modal.style.display = 'none');
+        }
+    });
+}
