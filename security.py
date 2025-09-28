@@ -5,7 +5,8 @@ import hashlib
 from flask import request, jsonify
 from werkzeug.utils import secure_filename
 from functools import wraps
-import magic
+import magic as magic
+
 from datetime import datetime, timedelta
 
 class SecurityManager:

@@ -1,19 +1,18 @@
 # auth.py - User Authentication Module
-from flask import session, request, jsonify, redirect, url_for
+from flask import session, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import sqlite3
-import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 import secrets
 
 class AuthManager:
-    def __init__(self, db_path='users.db'):
+    def __init__(self, db_path='data_science_bot.db'):  # unified DB
         self.db_path = db_path
         self.init_db()
     
     def init_db(self):
-        """Initialize user database"""
+        """Initialize users & API usage tables"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -33,7 +32,7 @@ class AuthManager:
             )
         ''')
         
-        # API keys table for tracking usage
+        # API usage tracking
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS api_usage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,16 +52,13 @@ class AuthManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Check if user already exists
             cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
             if cursor.fetchone():
                 return {'error': 'User already exists'}
             
-            # Generate API key
             api_key = 'ds_' + secrets.token_urlsafe(32)
             password_hash = generate_password_hash(password)
             
-            # Set usage limits based on plan
             usage_limits = {'free': 100, 'basic': 1000, 'premium': 10000}
             usage_limit = usage_limits.get(plan, 100)
             
@@ -98,11 +94,10 @@ class AuthManager:
             ''', (email,))
             
             user = cursor.fetchone()
-            if not user or not user[6]:  # is_active check
+            if not user or not user[6]:
                 return {'error': 'Invalid credentials'}
             
             if check_password_hash(user[1], password):
-                # Update last login
                 cursor.execute('UPDATE users SET last_login = ? WHERE id = ?', 
                              (datetime.now(), user[0]))
                 conn.commit()
@@ -135,11 +130,10 @@ class AuthManager:
             ''', (api_key,))
             
             user = cursor.fetchone()
-            if not user or not user[4]:  # is_active check
+            if not user or not user[4]:
                 return {'valid': False, 'error': 'Invalid API key'}
             
-            # Check usage limits
-            if user[3] >= user[2]:  # usage_count >= usage_limit
+            if user[3] >= user[2]:
                 return {'valid': False, 'error': 'Usage limit exceeded'}
             
             conn.close()
@@ -159,10 +153,7 @@ class AuthManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Update usage count
             cursor.execute('UPDATE users SET usage_count = usage_count + 1 WHERE id = ?', (user_id,))
-            
-            # Log usage
             cursor.execute('INSERT INTO api_usage (user_id, endpoint) VALUES (?, ?)', 
                          (user_id, endpoint))
             
@@ -173,9 +164,10 @@ class AuthManager:
         except Exception as e:
             return False
 
-# Decorators for authentication
+
+# ---- Decorators ----
 def require_auth(f):
-    """Decorator to require session authentication"""
+    from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
@@ -184,12 +176,11 @@ def require_auth(f):
     return decorated_function
 
 def require_api_key(auth_manager):
-    """Decorator to require API key authentication"""
+    from functools import wraps
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
-            
             if not api_key:
                 return jsonify({'error': 'API key required'}), 401
             
@@ -197,24 +188,9 @@ def require_api_key(auth_manager):
             if not validation['valid']:
                 return jsonify({'error': validation['error']}), 401
             
-            # Increment usage
             auth_manager.increment_usage(validation['user_id'], request.endpoint)
-            
-            # Add user info to request context
             request.user_info = validation
             
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
-
-def rate_limit(max_requests=60, window=60):
-    """Rate limiting decorator"""
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            # Simple in-memory rate limiting (use Redis in production)
-            client_id = request.remote_addr
-            # Implement rate limiting logic here
             return f(*args, **kwargs)
         return decorated_function
     return decorator
