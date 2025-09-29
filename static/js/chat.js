@@ -1,3 +1,6 @@
+// Add at the top of your production chat.js
+const API_KEY = 'ds_GJKkhm1ETsH_iH-VmxV8ZRc6QOIL-ZoR2megS-zAZyM';
+
 // Chat application JavaScript with API Key
 let chatHistory = [];
 let currentDataset = null;

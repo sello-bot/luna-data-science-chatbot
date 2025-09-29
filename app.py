@@ -171,7 +171,14 @@ def chat():
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
         return jsonify({'error': 'An error occurred processing your request'}), 500
-
+# In your app.py, modify the upload route
+@app.route('/api/upload', methods=['POST'])
+@secure_headers
+def upload_file():
+    # Temporary: Skip API key check for testing
+    # TODO: Remove this bypass for production
+    
+    # Your existing upload code...
 @app.route('/api/upload', methods=['POST'])
 @secure_headers
 @require_rate_limit(security_manager, max_requests=10, window_minutes=1)
