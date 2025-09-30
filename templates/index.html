@@ -12,7 +12,7 @@
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <h2><i class="fas fa-robot"></i> DS Assistant<br><h3> Luna </h3></h2>
+                <h2><i class="fas fa-robot"></i> DS Assistant<br><h3>Luna</h3></h2>
             </div>
             
             <div class="sidebar-section">
@@ -137,68 +137,7 @@
         </div>
     </div>
     
+    <!-- Load JS -->
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
-    <script>
-        // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeChat();
-            setupFileUpload();
-            setupKeyboardShortcuts();
-        });
-        
-        // Handle Enter key in input
-        document.getElementById('messageInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-        
-        // File upload functionality
-        function setupFileUpload() {
-            const fileInput = document.getElementById('fileInput');
-            const uploadArea = document.getElementById('uploadArea');
-            
-            fileInput.addEventListener('change', handleFileUpload);
-            
-            // Drag and drop functionality
-            uploadArea.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                uploadArea.classList.add('drag-over');
-            });
-            
-            uploadArea.addEventListener('dragleave', function(e) {
-                e.preventDefault();
-                uploadArea.classList.remove('drag-over');
-            });
-            
-            uploadArea.addEventListener('drop', function(e) {
-                e.preventDefault();
-                uploadArea.classList.remove('drag-over');
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    handleFileUpload({target: {files: files}});
-                }
-            });
-        }
-        
-        function setupKeyboardShortcuts() {
-            document.addEventListener('keydown', function(e) {
-                // Ctrl/Cmd + Enter to send message
-                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                    sendMessage();
-                }
-                
-                // Escape to close modals
-                if (e.key === 'Escape') {
-                    closeAllModals();
-                }
-            });
-        }
-        
-        function closeAllModals() {
-            document.getElementById('codeModal').style.display = 'none';
-            document.getElementById('dataModal').style.display = 'none';
-        }
-    </script>
 </body>
 </html>

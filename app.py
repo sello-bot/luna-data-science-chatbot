@@ -37,6 +37,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# DEBUG MODE FLAG
+DEBUG_MODE = True  # Set to False for production
+
 
 def get_user_chatbot(user_id):
     """Get or create chatbot instance for user"""
@@ -113,46 +116,80 @@ def logout():
 @app.route("/")
 @secure_headers
 def index():
+    # In debug mode, auto-create session
+    if DEBUG_MODE and "user_id" not in session:
+        session["user_id"] = 1
+        session["plan"] = "free"
+        logger.info("🔧 DEBUG: Auto-created session for user_id=1")
+    
     if "user_id" not in session:
         return redirect(url_for("login"))
+    
     return render_template("index.html")
 
 
 @app.route("/api/chat", methods=["POST"])
 @secure_headers
-@require_rate_limit(security_manager, max_requests=30, window_minutes=1)
-@validate_json_input(required_fields=["message"])
 def chat():
+    """
+    Main chat endpoint - simplified for debug mode
+    """
     try:
+        logger.info("=== CHAT ENDPOINT HIT ===")
+        
+        # Get request data
         data = request.get_json()
+        if not data:
+            logger.error("No JSON data received")
+            return jsonify({"error": "No data provided"}), 400
+        
+        logger.info(f"Received data: {data}")
+        
         user_message = data.get("message", "")
-
-        if app.config.get("DEBUG", False):
-            user_id = 1  # Dev mode
+        if not user_message:
+            logger.error("No message in request")
+            return jsonify({"error": "Message is required"}), 400
+        
+        logger.info(f"User message: {user_message}")
+        
+        # In debug mode, skip authentication
+        if DEBUG_MODE:
+            user_id = 1
+            logger.info("🔧 DEBUG: Using user_id=1 (skipping auth)")
         else:
+            # Production authentication
             api_key = request.headers.get("X-API-Key")
             if not api_key:
+                logger.error("No API key provided")
                 return jsonify({"error": "API key required"}), 401
 
             validation = auth_manager.validate_api_key(api_key)
             if not validation["valid"]:
+                logger.error(f"Invalid API key: {validation.get('error')}")
                 return jsonify({"error": validation["error"]}), 401
 
             user_id = validation["user_id"]
             auth_manager.increment_usage(user_id, request.endpoint)
-
-        validation = security_manager.validate_chat_input(user_message)
-        if not validation["valid"]:
-            return jsonify({"error": validation["error"]}), 400
-
-        user_message = validation["sanitized_message"]
+        
+        # Basic input sanitization
+        user_message = user_message.strip()
+        if len(user_message) > 5000:
+            return jsonify({"error": "Message too long (max 5000 characters)"}), 400
+        
         session_id = data.get("session_id", str(uuid.uuid4()))
-
+        logger.info(f"Processing message for user_id={user_id}, session_id={session_id}")
+        
+        # Get or create chatbot instance
         chatbot, data_processor = get_user_chatbot(user_id)
+        logger.info("Got chatbot and data processor instances")
+        
+        # Process the message
+        logger.info("Calling chatbot.process_message()")
         response = chatbot.process_message(user_message, data_processor)
-
+        logger.info(f"Chatbot response: {response}")
+        
         return jsonify({
-            "response": response["message"],
+            "response": response.get("message", ""),
             "data": response.get("data"),
             "visualization": response.get("visualization"),
             "code": response.get("code"),
@@ -160,71 +197,137 @@ def chat():
         })
 
     except Exception as e:
-        logger.error(f"Chat error: {str(e)}")
-        return jsonify({"error": "An error occurred processing your request"}), 500
+        logger.error(f"Chat error: {str(e)}", exc_info=True)
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
-# ------------------ UPLOAD ROUTE (fixed) ------------------
+# ------------------ UPLOAD ROUTE ------------------
 
 @app.route("/api/upload", methods=["POST"])
 @secure_headers
-@require_rate_limit(security_manager, max_requests=10, window_minutes=1)
-@require_api_key(auth_manager)
 def upload_file():
     try:
-        # Allow local dev with hardcoded TEST_API_KEY
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header == f"Bearer {TEST_API_KEY}":
-            request.user_info = {
-                "user_id": "test_user",
-                "plan": "free",
-                "remaining_usage": 100000
-            }
-            logger.info("Test API key authenticated (local dev)")
-
-        user_id = request.user_info["user_id"]
+        logger.info("=== UPLOAD ENDPOINT HIT ===")
+        
+        # In debug mode, create fake user_info
+        if DEBUG_MODE:
+            user_id = 1
+            logger.info("🔧 DEBUG: Using user_id=1 for upload")
+        else:
+            # Production auth
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header == f"Bearer {TEST_API_KEY}":
+                user_id = "test_user"
+            else:
+                api_key = request.headers.get("X-API-Key")
+                if not api_key:
+                    return jsonify({"error": "API key required"}), 401
+                
+                validation = auth_manager.validate_api_key(api_key)
+                if not validation["valid"]:
+                    return jsonify({"error": validation["error"]}), 401
+                
+                user_id = validation["user_id"]
 
         if "file" not in request.files:
+            logger.error("No file in request")
             return jsonify({"error": "No file provided"}), 400
 
         file = request.files["file"]
-        validation = security_manager.validate_file_upload(file)
-        if not validation["valid"]:
-            return jsonify({"error": validation["errors"][0]}), 400
-
-        secure_name = validation["secure_filename"]
+        logger.info(f"File received: {file.filename}")
+        
+        # Basic validation
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+        
+        allowed_extensions = {'.csv', '.json', '.xlsx', '.xls'}
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        
+        if file_ext not in allowed_extensions:
+            return jsonify({"error": f"File type {file_ext} not allowed"}), 400
+        
+        # Secure the filename
+        secure_name = secure_filename(file.filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        secure_name = f"{timestamp}_{secure_name}"
+        
         file_path = os.path.join("data", secure_name)
         os.makedirs("data", exist_ok=True)
+        
+        logger.info(f"Saving file to: {file_path}")
         file.save(file_path)
 
+        # Load and process data
         chatbot, data_processor = get_user_chatbot(user_id)
+        logger.info("Loading data...")
         dataset = data_processor.load_data(file_path)
         data_info = data_processor.get_data_info()
+        logger.info(f"Data loaded: {data_info}")
 
         chatbot.current_dataset = dataset
         file_size = os.path.getsize(file_path)
-        file_type = os.path.splitext(secure_name)[1][1:]
+        file_type = file_ext[1:]  # Remove the dot
 
-        dataset_result = db_manager.save_dataset(
-            user_id, secure_name, validation["original_filename"],
-            file_path, file_size, file_type, data_info
-        )
+        # Save to database (if available)
+        dataset_id = None
+        try:
+            dataset_result = db_manager.save_dataset(
+                user_id, secure_name, file.filename,
+                file_path, file_size, file_type, data_info
+            )
+            dataset_id = dataset_result.get("dataset_id")
+        except Exception as e:
+            logger.warning(f"Could not save to database: {str(e)}")
 
         return jsonify({
             "message": f"File uploaded successfully! Shape: {data_info['shape']}, Columns: {len(data_info['columns'])}",
             "data_info": data_info,
-            "dataset_id": dataset_result.get("dataset_id")
+            "dataset_id": dataset_id
         })
 
     except Exception as e:
-        logger.error(f"Upload error: {str(e)}")
+        logger.error(f"Upload error: {str(e)}", exc_info=True)
         if "file_path" in locals() and os.path.exists(file_path):
             os.remove(file_path)
-        return jsonify({"error": "Failed to process uploaded file"}), 500
+        return jsonify({"error": f"Failed to process uploaded file: {str(e)}"}), 500
 
 
-# ------------------ OTHER ROUTES (datasets, models, etc.) ------------------
-# (keep the rest of your routes as-is, unchanged)
+# ------------------ DATASETS ROUTE ------------------
+
+@app.route("/api/datasets", methods=["GET"])
+@secure_headers
+def get_datasets():
+    try:
+        if DEBUG_MODE:
+            user_id = 1
+        else:
+            api_key = request.headers.get("X-API-Key")
+            if not api_key:
+                return jsonify({"error": "API key required"}), 401
+            
+            validation = auth_manager.validate_api_key(api_key)
+            if not validation["valid"]:
+                return jsonify({"error": validation["error"]}), 401
+            
+            user_id = validation["user_id"]
+        
+        datasets = db_manager.get_user_datasets(user_id)
+        return jsonify({"datasets": datasets})
+    
+    except Exception as e:
+        logger.error(f"Error fetching datasets: {str(e)}")
+        return jsonify({"error": "Failed to fetch datasets"}), 500
+
+
+# ------------------ HEALTH CHECK ------------------
+
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    return jsonify({
+        "status": "ok",
+        "debug_mode": DEBUG_MODE,
+        "timestamp": datetime.now().isoformat()
+    })
 
 
 # ------------------ CLEANUP ------------------
@@ -241,11 +344,26 @@ def cleanup_old_data():
 
 
 if __name__ == "__main__":
+    # Create necessary directories
     os.makedirs("data", exist_ok=True)
     os.makedirs("models", exist_ok=True)
     os.makedirs("static/plots", exist_ok=True)
     os.makedirs("templates", exist_ok=True)
 
+    # Run cleanup
     cleanup_old_data()
-    app.run(debug=app.config.get("DEBUG", False), host="0.0.0.0", port=5000)
+    
+    # Log startup info
+    logger.info("=" * 50)
+    logger.info("🚀 Starting Data Science Chatbot")
+    logger.info(f"Debug Mode: {DEBUG_MODE}")
+    logger.info(f"Flask Debug: {app.config.get('DEBUG', False)}")
+    logger.info("=" * 50)
+    
+    # Run the app
+    app.run(
+        debug=app.config.get("DEBUG", False), 
+        host="0.0.0.0", 
+        port=5000
+    )
 
