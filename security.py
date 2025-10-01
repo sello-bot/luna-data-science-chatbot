@@ -1,213 +1,194 @@
-# security.py - Security and Input Validation Module
-import re
-import os
-import hashlib
-from flask import request, jsonify
-from werkzeug.utils import secure_filename
-from functools import wraps
-import magic as magic
+"""
+Security middleware - Fixed for Heroku (no python-magic dependency)
+"""
 
-from datetime import datetime, timedelta
+import os
+import re
+from functools import wraps
+from flask import request, jsonify
+from werkzeug.utils import secure_filename as werkzeug_secure_filename
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class SecurityManager:
+    """Manage security operations"""
+    
     def __init__(self):
-        self.allowed_extensions = {'csv', 'json', 'xlsx', 'xls', 'parquet'}
-        self.max_file_size = 16 * 1024 * 1024  # 16MB
-        self.allowed_mime_types = {
-            'text/csv',
-            'application/json',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-excel',
-            'application/octet-stream'  # for parquet files
-        }
-        
-        # Rate limiting storage (use Redis in production)
-        self.rate_limit_storage = {}
+        self.rate_limits = {}
+        self.allowed_extensions = {'.csv', '.json', '.xlsx', '.xls', '.parquet'}
+        self.max_file_size = 50 * 1024 * 1024  # 50MB
     
     def validate_file_upload(self, file):
-        """Comprehensive file upload validation"""
+        """Validate uploaded file without python-magic"""
         errors = []
         
         # Check if file exists
-        if not file or file.filename == '':
+        if not file or not file.filename:
             errors.append("No file provided")
-            return {'valid': False, 'errors': errors}
+            return {"valid": False, "errors": errors}
         
-        # Secure filename
-        filename = secure_filename(file.filename)
-        if not filename:
+        # Secure the filename
+        original_filename = file.filename
+        secure_name = werkzeug_secure_filename(original_filename)
+        
+        if not secure_name:
             errors.append("Invalid filename")
-            return {'valid': False, 'errors': errors}
+            return {"valid": False, "errors": errors}
         
         # Check file extension
-        if not self._allowed_file_extension(filename):
-            errors.append(f"File type not allowed. Supported: {', '.join(self.allowed_extensions)}")
+        file_ext = os.path.splitext(secure_name)[1].lower()
+        if file_ext not in self.allowed_extensions:
+            errors.append(f"File type {file_ext} not allowed. Allowed: {', '.join(self.allowed_extensions)}")
         
-        # Check file size
-        if hasattr(file, 'content_length') and file.content_length > self.max_file_size:
-            errors.append(f"File too large. Maximum size: {self.max_file_size / (1024*1024)}MB")
+        # Check file size (if possible)
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)  # Reset file pointer
         
-        # Validate MIME type
-        if hasattr(file, 'content_type'):
-            if not self._allowed_mime_type(file.content_type):
-                errors.append("File type validation failed")
+        if file_size > self.max_file_size:
+            errors.append(f"File too large. Maximum size: {self.max_file_size / 1024 / 1024}MB")
         
-        # Generate secure filename with hash
-        secure_name = self._generate_secure_filename(filename)
+        if file_size == 0:
+            errors.append("File is empty")
+        
+        if errors:
+            return {"valid": False, "errors": errors}
         
         return {
-            'valid': len(errors) == 0,
-            'errors': errors,
-            'secure_filename': secure_name,
-            'original_filename': filename
+            "valid": True,
+            "secure_filename": secure_name,
+            "original_filename": original_filename,
+            "file_size": file_size,
+            "errors": []
         }
     
-    def _allowed_file_extension(self, filename):
-        """Check if file extension is allowed"""
-        return '.' in filename and \
-               filename.rsplit('.', 1)[1].lower() in self.allowed_extensions
-    
-    def _allowed_mime_type(self, mime_type):
-        """Check if MIME type is allowed"""
-        return mime_type in self.allowed_mime_types
-    
-    def _generate_secure_filename(self, filename):
-        """Generate secure filename with timestamp and hash"""
-        name, ext = os.path.splitext(filename)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        hash_suffix = hashlib.md5(f"{name}{timestamp}".encode()).hexdigest()[:8]
-        return f"{secure_filename(name)}_{timestamp}_{hash_suffix}{ext}"
-    
     def validate_chat_input(self, message):
-        """Validate chat message input"""
-        if not message or not isinstance(message, str):
-            return {'valid': False, 'error': 'Invalid message format'}
+        """Validate chat input"""
+        if not message or not message.strip():
+            return {
+                "valid": False,
+                "error": "Message cannot be empty",
+                "sanitized_message": ""
+            }
         
-        # Length check
-        if len(message) > 2000:
-            return {'valid': False, 'error': 'Message too long (max 2000 characters)'}
+        # Check length
+        if len(message) > 10000:
+            return {
+                "valid": False,
+                "error": "Message too long (max 10000 characters)",
+                "sanitized_message": ""
+            }
         
-        # Basic XSS protection
+        # Basic sanitization
+        sanitized = message.strip()
+        
+        # Check for potential injection attacks (basic)
         dangerous_patterns = [
-            r'<script.*?>.*?</script>',
+            r'<script[^>]*>.*?</script>',
             r'javascript:',
-            r'on\w+\s*=',
-            r'<iframe',
-            r'<object',
-            r'<embed'
+            r'onerror\s*=',
+            r'onclick\s*='
         ]
         
         for pattern in dangerous_patterns:
-            if re.search(pattern, message, re.IGNORECASE):
-                return {'valid': False, 'error': 'Invalid message content'}
+            if re.search(pattern, sanitized, re.IGNORECASE):
+                return {
+                    "valid": False,
+                    "error": "Message contains potentially dangerous content",
+                    "sanitized_message": ""
+                }
         
-        # Sanitize message
-        sanitized = self._sanitize_input(message)
-        
-        return {'valid': True, 'sanitized_message': sanitized}
+        return {
+            "valid": True,
+            "sanitized_message": sanitized,
+            "error": None
+        }
     
-    def _sanitize_input(self, text):
-        """Basic input sanitization"""
-        # Remove potential HTML tags
-        text = re.sub(r'<[^>]+>', '', text)
-        # Remove potential script injections
-        text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
-        return text.strip()
-    
-    def check_rate_limit(self, client_id, endpoint, max_requests=60, window_minutes=1):
-        """Simple rate limiting (use Redis in production)"""
-        current_time = datetime.now()
-        window_start = current_time - timedelta(minutes=window_minutes)
+    def check_rate_limit(self, identifier, max_requests=100, window_seconds=60):
+        """Simple in-memory rate limiting"""
+        import time
         
-        # Clean old entries
-        if client_id in self.rate_limit_storage:
-            self.rate_limit_storage[client_id] = [
-                req_time for req_time in self.rate_limit_storage[client_id]
-                if req_time > window_start
-            ]
-        else:
-            self.rate_limit_storage[client_id] = []
+        current_time = time.time()
         
-        # Check current count
-        current_requests = len(self.rate_limit_storage[client_id])
+        if identifier not in self.rate_limits:
+            self.rate_limits[identifier] = []
         
-        if current_requests >= max_requests:
+        # Remove old requests outside the window
+        self.rate_limits[identifier] = [
+            req_time for req_time in self.rate_limits[identifier]
+            if current_time - req_time < window_seconds
+        ]
+        
+        # Check if limit exceeded
+        if len(self.rate_limits[identifier]) >= max_requests:
             return {
-                'allowed': False,
-                'error': f'Rate limit exceeded. Max {max_requests} requests per {window_minutes} minute(s)'
+                "allowed": False,
+                "retry_after": window_seconds
             }
         
         # Add current request
-        self.rate_limit_storage[client_id].append(current_time)
+        self.rate_limits[identifier].append(current_time)
         
         return {
-            'allowed': True,
-            'remaining': max_requests - current_requests - 1
-        }
-    
-    def validate_api_parameters(self, params, required_fields, allowed_fields):
-        """Validate API parameters"""
-        errors = []
-        
-        # Check required fields
-        for field in required_fields:
-            if field not in params:
-                errors.append(f"Missing required field: {field}")
-        
-        # Check for unexpected fields
-        for field in params:
-            if field not in allowed_fields:
-                errors.append(f"Unexpected field: {field}")
-        
-        return {
-            'valid': len(errors) == 0,
-            'errors': errors
+            "allowed": True,
+            "remaining": max_requests - len(self.rate_limits[identifier])
         }
 
-# Security decorators
-def require_rate_limit(security_manager, max_requests=60, window_minutes=1):
-    """Decorator for rate limiting"""
+
+def require_rate_limit(security_manager, max_requests=100, window_minutes=1):
+    """Rate limiting decorator"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            client_id = request.remote_addr
-            endpoint = request.endpoint
+            # Get identifier (IP address or user ID)
+            identifier = request.remote_addr
+            if hasattr(request, 'user_info') and request.user_info:
+                identifier = f"user_{request.user_info.get('user_id')}"
             
-            rate_check = security_manager.check_rate_limit(
-                client_id, endpoint, max_requests, window_minutes
+            # Check rate limit
+            result = security_manager.check_rate_limit(
+                identifier,
+                max_requests=max_requests,
+                window_seconds=window_minutes * 60
             )
             
-            if not rate_check['allowed']:
-                return jsonify({'error': rate_check['error']}), 429
+            if not result["allowed"]:
+                return jsonify({
+                    "error": "Rate limit exceeded. Please try again later.",
+                    "retry_after": result["retry_after"]
+                }), 429
             
             return f(*args, **kwargs)
         return decorated_function
     return decorator
 
-def validate_json_input(required_fields=None, allowed_fields=None):
-    """Decorator to validate JSON input"""
+
+def validate_json_input(required_fields=None):
+    """Validate JSON input decorator"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if not request.is_json:
-                return jsonify({'error': 'Content-Type must be application/json'}), 400
+                return jsonify({"error": "Content-Type must be application/json"}), 400
             
             data = request.get_json()
             if not data:
-                return jsonify({'error': 'Invalid JSON data'}), 400
+                return jsonify({"error": "Invalid JSON"}), 400
             
-            if required_fields or allowed_fields:
-                security_manager = SecurityManager()
-                validation = security_manager.validate_api_parameters(
-                    data, required_fields or [], allowed_fields or list(data.keys())
-                )
-                
-                if not validation['valid']:
-                    return jsonify({'error': 'Validation failed', 'details': validation['errors']}), 400
+            # Check required fields
+            if required_fields:
+                missing = [field for field in required_fields if field not in data]
+                if missing:
+                    return jsonify({
+                        "error": f"Missing required fields: {', '.join(missing)}"
+                    }), 400
             
             return f(*args, **kwargs)
         return decorated_function
     return decorator
+
 
 def secure_headers(f):
     """Add security headers to response"""
@@ -215,13 +196,58 @@ def secure_headers(f):
     def decorated_function(*args, **kwargs):
         response = f(*args, **kwargs)
         
-        # Add security headers
-        if hasattr(response, 'headers'):
-            response.headers['X-Content-Type-Options'] = 'nosniff'
-            response.headers['X-Frame-Options'] = 'DENY'
-            response.headers['X-XSS-Protection'] = '1; mode=block'
-            response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-            response.headers['Content-Security-Policy'] = "default-src 'self'"
+        # If response is a tuple (response, status_code)
+        if isinstance(response, tuple):
+            resp, status_code = response[0], response[1]
+        else:
+            resp = response
+            status_code = 200
         
-        return response
+        # Add security headers
+        if hasattr(resp, 'headers'):
+            resp.headers['X-Content-Type-Options'] = 'nosniff'
+            resp.headers['X-Frame-Options'] = 'DENY'
+            resp.headers['X-XSS-Protection'] = '1; mode=block'
+            resp.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        
+        if isinstance(response, tuple):
+            return resp, status_code
+        return resp
+    
     return decorated_function
+
+
+def sanitize_filename(filename):
+    """Sanitize filename to prevent directory traversal"""
+    # Remove any path components
+    filename = os.path.basename(filename)
+    
+    # Remove dangerous characters
+    filename = re.sub(r'[^\w\s\-\.]', '', filename)
+    
+    # Limit length
+    if len(filename) > 255:
+        name, ext = os.path.splitext(filename)
+        filename = name[:250] + ext
+    
+    return filename
+
+
+def validate_api_key_format(api_key):
+    """Validate API key format"""
+    if not api_key:
+        return False
+    
+    # Check format: ds_xxxxx (data science prefix)
+    if not api_key.startswith('ds_'):
+        return False
+    
+    # Check length (should be reasonable)
+    if len(api_key) < 20 or len(api_key) > 100:
+        return False
+    
+    # Check for valid characters (alphanumeric + underscore + hyphen)
+    if not re.match(r'^ds_[A-Za-z0-9_\-]+$', api_key):
+        return False
+    
+    return True
