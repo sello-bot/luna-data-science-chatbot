@@ -6,18 +6,16 @@ services:
     plan: free
     branch: main
     buildCommand: pip install -r requirements.txt && python migrate_db.py
-    startCommand: gunicorn app:app --workers 2 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
+    startCommand: gunicorn app:app --workers 2 --timeout 120 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: POETRY_ACTIVE
+        value: 0
       - key: SECRET_KEY
         generateValue: true
       - key: FLASK_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: chatbot-db
-          property: connectionString
       - key: OPENAI_API_KEY
         sync: false
 
@@ -25,6 +23,3 @@ databases:
   - name: chatbot-db
     databaseName: chatbot
     plan: free
-```
-
-**Key addition:** `branch: main`
