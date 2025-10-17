@@ -1,8 +1,12 @@
+"""
+Application Configuration
+"""
+
 import os
 from datetime import timedelta
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 class Config:
@@ -10,18 +14,26 @@ class Config:
     
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
-    DEBUG = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
-    ENV = os.environ.get('FLASK_ENV', 'development')
+    DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    ENV = os.environ.get('FLASK_ENV', 'production')
     
     # Database settings
-    DATABASE_URL = os.environ.get('DATABASE_URL') or 'sqlite:///data_science_bot.db'
+    DATABASE_URL = os.environ.get('DATABASE_URL')
     
-    # If using PostgreSQL on Heroku, fix the URL
+    # Fix Heroku Postgres URL
     if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     
+    # Default to SQLite for local development
+    if not DATABASE_URL:
+        DATABASE_URL = 'sqlite:///chatbot.db'
+    
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+    }
     
     # Session settings
     SESSION_TYPE = 'filesystem'
@@ -29,18 +41,21 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(seconds=SESSION_TIMEOUT)
     
     # File upload settings
-    MAX_UPLOAD_SIZE = int(os.environ.get('MAX_UPLOAD_SIZE', 16777216))  # 16MB default
+    MAX_UPLOAD_SIZE = int(os.environ.get('MAX_UPLOAD_SIZE', 52428800))
     MAX_CONTENT_LENGTH = MAX_UPLOAD_SIZE
-    MAX_FILE_SIZE_MB = int(os.environ.get('MAX_FILE_SIZE_MB', 16))
+    MAX_FILE_SIZE_MB = int(os.environ.get('MAX_FILE_SIZE_MB', 50))
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', 'data')
-    ALLOWED_EXTENSIONS = set(os.environ.get('ALLOWED_EXTENSIONS', 'csv,json,xlsx,xls,parquet').split(','))
+    
+    # Allowed file extensions
+    allowed_ext = os.environ.get('ALLOWED_EXTENSIONS', 'csv,json,xlsx,xls,parquet')
+    ALLOWED_EXTENSIONS = set(allowed_ext.split(','))
     
     # Security settings
     RATE_LIMIT_ENABLED = os.environ.get('RATE_LIMIT_ENABLED', 'True').lower() == 'true'
     DEFAULT_RATE_LIMIT = int(os.environ.get('DEFAULT_RATE_LIMIT', 60))
     PREMIUM_RATE_LIMIT = int(os.environ.get('PREMIUM_RATE_LIMIT', 300))
     RATE_LIMIT_REQUESTS = DEFAULT_RATE_LIMIT
-    RATE_LIMIT_WINDOW = 60  # seconds
+    RATE_LIMIT_WINDOW = 60
     
     # API Keys
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
@@ -51,18 +66,21 @@ class Config:
     LOG_FILE = os.environ.get('LOG_FILE', 'logs/app.log')
     
     # CORS settings
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', '*').split(',')
+    cors_origins = os.environ.get('CORS_ORIGINS', '*')
+    CORS_ORIGINS = cors_origins.split(',') if cors_origins != '*' else '*'
     
-    # Email settings (optional)
+    # Email settings
     SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
     SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
     EMAIL_ADDRESS = os.environ.get('EMAIL_ADDRESS')
     EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
     
+    # Sentry
+    SENTRY_DSN = os.environ.get('SENTRY_DSN')
+    
     @staticmethod
     def init_app(app):
         """Initialize application with config"""
-        # Create necessary directories
         os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
         os.makedirs('logs', exist_ok=True)
         os.makedirs('models', exist_ok=True)

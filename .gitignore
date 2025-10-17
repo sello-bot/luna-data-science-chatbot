@@ -124,3 +124,45 @@ tmp/
 *.pem
 *.key
 config.json
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+env/
+
+# Environment
+.env
+.env.local
+
+# Data
+data/*
+!data/.gitkeep
+*.csv
+*.xlsx
+
+# Models
+models/*
+!models/.gitkeep
+*.pkl
+
+# Plots
+static/plots/*
+!static/plots/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
